@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "./thrusftp",
+  "./thrussh/thrussh",
+  "./thrussh/thrussh-keys",
+]

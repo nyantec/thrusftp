@@ -1,0 +1,17 @@
+[package]
+name = "thrusftp"
+version = "0.1.0"
+edition = "2018"
+authors = ["The thrusftp Authors <oss@nyantec.com>"]
+description = "Implementation of the SFTP protocol"
+repository = "https://github.com/nyantec/thrusftp"
+license = "MirOS"
+readme = "README.md"
+
+[dependencies]
+thrussh = { path = "../thrussh/thrussh", features = [ "openssl" ] }
+thrussh-keys = { path = "../thrussh/thrussh-keys", features = [ "openssl" ] }
+tokio = { version = "1.10", features = [ "full" ] }
+async-trait = "0.1"
+anyhow = "1.0"
+libc = "0.2"
