@@ -31,16 +31,12 @@
 //! to all other clients:
 //!
 //! ```
-//! extern crate thrussh;
-//! extern crate thrussh_keys;
-//! extern crate futures;
-//! extern crate tokio;
 //! use std::sync::{Mutex, Arc};
 //! use thrussh::*;
 //! use thrussh::server::{Auth, Session};
 //! use thrussh_keys::*;
 //! use std::collections::HashMap;
-//! use futures::Future;
+//! use async_trait::async_trait;
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -78,32 +74,21 @@
 //!     }
 //! }
 //!
+//! #[async_trait]
 //! impl server::Handler for Server {
 //!     type Error = anyhow::Error;
-//!     type FutureAuth = futures::future::Ready<Result<(Self, server::Auth), anyhow::Error>>;
-//!     type FutureUnit = futures::future::Ready<Result<(Self, Session), anyhow::Error>>;
-//!     type FutureBool = futures::future::Ready<Result<(Self, Session, bool), anyhow::Error>>;
 //!
-//!     fn finished_auth(mut self, auth: Auth) -> Self::FutureAuth {
-//!         futures::future::ready(Ok((self, auth)))
-//!     }
-//!     fn finished_bool(self, b: bool, s: Session) -> Self::FutureBool {
-//!         futures::future::ready(Ok((self, s, b)))
-//!     }
-//!     fn finished(self, s: Session) -> Self::FutureUnit {
-//!         futures::future::ready(Ok((self, s)))
-//!     }
-//!     fn channel_open_session(self, channel: ChannelId, session: Session) -> Self::FutureUnit {
+//!     async fn channel_open_session(self, channel: ChannelId, session: Session) -> anyhow::Result<(Self, Session)> {
 //!         {
 //!             let mut clients = self.clients.lock().unwrap();
 //!             clients.insert((self.id, channel), session.handle());
 //!         }
-//!         self.finished(session)
+//!         Ok((self, session))
 //!     }
-//!     fn auth_publickey(self, _: &str, _: &key::PublicKey) -> Self::FutureAuth {
-//!         self.finished_auth(server::Auth::Accept)
+//!     async fn auth_publickey(self, _: &str, _: &key::PublicKey) -> anyhow::Result<(Self, Session, server::Auth)> {
+//!         Ok((self, session, server::Auth::Accept))
 //!     }
-//!     fn data(self, channel: ChannelId, data: &[u8], mut session: Session) -> Self::FutureUnit {
+//!     async fn data(self, channel: ChannelId, data: &[u8], mut session: Session) -> anyhow::Result<(Self, Session)> {
 //!         {
 //!             let mut clients = self.clients.lock().unwrap();
 //!             for ((id, channel), ref mut s) in clients.iter_mut() {
@@ -113,7 +98,7 @@
 //!             }
 //!         }
 //!         session.data(channel, CryptoVec::from_slice(data));
-//!         self.finished(session)
+//!         Ok((self, session))
 //!     }
 //! }
 //! ```
@@ -150,44 +135,32 @@
 //! data.
 //!
 //! ```
-//!extern crate thrussh;
-//!extern crate thrussh_keys;
-//!extern crate futures;
-//!extern crate tokio;
-//!extern crate env_logger;
 //!use std::sync::Arc;
 //!use thrussh::*;
 //!use thrussh::server::{Auth, Session};
 //!use thrussh_keys::*;
-//!use futures::Future;
+//!use async_trait::async_trait;
 //!use std::io::Read;
 //!
 //!
 //!struct Client {
 //!}
 //!
+//!#[async_trait]
 //!impl client::Handler for Client {
 //!    type Error = anyhow::Error;
-//!    type FutureUnit = futures::future::Ready<Result<(Self, client::Session), anyhow::Error>>;
-//!    type FutureBool = futures::future::Ready<Result<(Self, bool), anyhow::Error>>;
 //!
-//!    fn finished_bool(self, b: bool) -> Self::FutureBool {
-//!        futures::future::ready(Ok((self, b)))
-//!    }
-//!    fn finished(self, session: client::Session) -> Self::FutureUnit {
-//!        futures::future::ready(Ok((self, session)))
-//!    }
-//!    fn check_server_key(self, server_public_key: &key::PublicKey) -> Self::FutureBool {
+//!    async fn check_server_key(self, server_public_key: &key::PublicKey) -> anyhow::Result<(Self, bool)> {
 //!        println!("check_server_key: {:?}", server_public_key);
-//!        self.finished_bool(true)
+//!        Ok((self, true))
 //!    }
-//!    fn channel_open_confirmation(self, channel: ChannelId, max_packet_size: u32, window_size: u32, session: client::Session) -> Self::FutureUnit {
+//!    async fn channel_open_confirmation(self, channel: ChannelId, max_packet_size: u32, window_size: u32, session: client::Session) -> anyhow::Result<(Self, client::Session)> {
 //!        println!("channel_open_confirmation: {:?}", channel);
-//!        self.finished(session)
+//!        Ok((self, session))
 //!    }
-//!    fn data(self, channel: ChannelId, data: &[u8], session: client::Session) -> Self::FutureUnit {
+//!    async fn data(self, channel: ChannelId, data: &[u8], session: client::Session) -> anyhow::Result<(Self, client::Session)> {
 //!        println!("data on channel {:?}: {:?}", channel, std::str::from_utf8(data));
-//!        self.finished(session)
+//!        Ok((self, session))
 //!    }
 //!}
 //!

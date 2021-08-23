@@ -3,6 +3,7 @@ use std::io::Write;
 use std::sync::Arc;
 use thrussh::*;
 use thrussh_keys::*;
+use async_trait::async_trait;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,19 +18,12 @@ async fn main() -> Result<()> {
 
 struct Client {}
 
+#[async_trait]
 impl client::Handler for Client {
     type Error = thrussh::Error;
-    type FutureUnit = futures::future::Ready<Result<(Self, client::Session), Self::Error>>;
-    type FutureBool = futures::future::Ready<Result<(Self, bool), Self::Error>>;
 
-    fn finished_bool(self, b: bool) -> Self::FutureBool {
-        futures::future::ready(Ok((self, b)))
-    }
-    fn finished(self, session: client::Session) -> Self::FutureUnit {
-        futures::future::ready(Ok((self, session)))
-    }
-    fn check_server_key(self, _server_public_key: &key::PublicKey) -> Self::FutureBool {
-        self.finished_bool(true)
+    async fn check_server_key(self, _server_public_key: &key::PublicKey) -> Result<(Self, bool), Self::Error> {
+        Ok((self, true))
     }
 }
 
