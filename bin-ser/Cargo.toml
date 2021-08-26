@@ -1,0 +1,18 @@
+[package]
+name = "bin_ser"
+version = "0.1.0"
+edition = "2018"
+authors = ["Yureka <yuka@yuka.dev>"]
+description = "Macros for (de)serializing binary protocols"
+repository = "https://github.com/nyantec/thrusftp"
+license = "MirOS"
+readme = "README.md"
+
+[dependencies]
+syn = "1.0"
+quote = "1.0"
+darling = "0.13"
+proc-macro2 = "1.0"
+
+[lib]
+proc-macro = true
