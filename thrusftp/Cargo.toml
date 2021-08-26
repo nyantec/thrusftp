@@ -9,6 +9,7 @@ license = "MirOS"
 readme = "README.md"
 
 [dependencies]
+bin_ser = { path = "../bin-ser" }
 thrussh = { path = "../thrussh/thrussh", features = [ "openssl" ] }
 thrussh-keys = { path = "../thrussh/thrussh-keys", features = [ "openssl" ] }
 tokio = { version = "1.10", features = [ "full" ] }

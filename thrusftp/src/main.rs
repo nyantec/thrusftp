@@ -1,6 +1,8 @@
-mod protocol;
 mod fs_sync;
 mod fs_async;
+mod error;
+mod types;
+mod parse;
 
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt, SeekFrom};
@@ -13,7 +15,9 @@ use std::collections::HashMap;
 use std::fs::{Metadata, Permissions};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-use protocol::*;
+use crate::types::*;
+use crate::error::{ProtocolError, Result};
+use crate::parse::{Serialize, Deserialize};
 
 #[tokio::main]
 async fn main() {
@@ -78,7 +82,7 @@ struct Client {
 impl server::Handler for Client {
     type Error = anyhow::Error;
 
-    async fn shell_request(self, channel: ChannelId, mut session: Session) -> anyhow::Result<(Self, Session)> {
+    async fn shell_request(self, channel: ChannelId, mut session: Session) -> Result<(Self, Session)> {
         session.channel_success(channel);
         session.data(channel, CryptoVec::from_slice(b"Only SFTP allowed, bye\n"));
         session.flush()?;
@@ -86,7 +90,7 @@ impl server::Handler for Client {
         Ok((self, session))
     }
 
-    async fn subsystem_request(self, channel: ChannelId, name: &str, mut session: Session) -> anyhow::Result<(Self, Session)> {
+    async fn subsystem_request(self, channel: ChannelId, name: &str, mut session: Session) -> Result<(Self, Session)> {
         match name {
             "sftp" => session.channel_success(channel),
             _ => {
@@ -97,11 +101,11 @@ impl server::Handler for Client {
         Ok((self, session))
     }
 
-    async fn auth_publickey(self, _: &str, _: &thrussh_keys::key::PublicKey) -> anyhow::Result<(Self, server::Auth)> {
+    async fn auth_publickey(self, _: &str, _: &thrussh_keys::key::PublicKey) -> Result<(Self, server::Auth)> {
         Ok((self, server::Auth::Accept))
     }
 
-    async fn data(mut self, channel: ChannelId, mut data: &[u8], mut session: Session) -> anyhow::Result<(Self, Session)> {
+    async fn data(mut self, channel: ChannelId, mut data: &[u8], mut session: Session) -> Result<(Self, Session)> {
         while data.len() > 0 {
             if self.recv_buf.len() < 4 {
                 let read_len = data.take((4 - self.recv_buf.len()) as u64).read_to_end(&mut self.recv_buf).await.unwrap();
@@ -115,13 +119,17 @@ impl server::Handler for Client {
                 let read_len = data.take(needed as u64).read_to_end(&mut self.recv_buf).await.unwrap();
                 data = &data[read_len..];
                 if read_len == needed {
-                    let packet = SftpClientPacket::from_bytes(&self.recv_buf).unwrap();
+                    let recv_buf = &self.recv_buf.as_slice();
+                    let packet = SftpClientPacket::deserialize(&mut &recv_buf[4..]).unwrap();
                     self.recv_buf.clear();
 
                     let resp = self.process_packet(packet).await.unwrap();
 
-                    let resp_bytes = resp.to_bytes().unwrap();
-                    session.data(channel, CryptoVec::from_slice(&resp_bytes));
+                    let mut resp_buf = Vec::new();
+                    let mut resp_bytes = resp.serialize().unwrap();
+                    resp_buf.append(&mut u32::serialize(&(resp_bytes.len() as u32))?);
+                    resp_buf.append(&mut resp_bytes);
+                    session.data(channel, CryptoVec::from_slice(&resp_buf));
                 }
             }
         }
@@ -131,13 +139,12 @@ impl server::Handler for Client {
 }
 
 impl Client {
-    async fn process_packet(&mut self, packet: SftpClientPacket) -> anyhow::Result<SftpServerPacket> {
-        //println!("request: {:?}", packet);
+    async fn process_packet(&mut self, packet: SftpClientPacket) -> Result<SftpServerPacket> {
         let resp = match packet {
             SftpClientPacket::Init { .. } => {
                 SftpServerPacket::Version {
                     version: 3,
-                    extensions: vec![
+                    /*extensions: vec![
                         Extension {
                             name: "statvfs@openssh.com".to_string(),
                             data: "2".to_string(),
@@ -154,7 +161,7 @@ impl Client {
                             name: "hardlink@openssh.com".to_string(),
                             data: "1".to_string(),
                         },
-                    ],
+                    ],*/
                 }
             },
             SftpClientPacket::Realpath { id, path } => {
@@ -285,14 +292,14 @@ impl Client {
                     status_resp(id, StatusCode::Eof)
                 } else {
                     data.truncate(total_read_len);
-                    SftpServerPacket::Data { id, data }
+                    SftpServerPacket::Data { id, data: data.into() }
                 }
             },
             SftpClientPacket::Write { id, handle, offset, data } => {
                 let file = self.file_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
 
                 file.seek(SeekFrom::Start(offset)).await?;
-                file.write_all(&data).await?;
+                file.write_all(&data.0).await?;
                 status_resp(id, StatusCode::r#Ok)
             },
             SftpClientPacket::Setstat { id, path, attrs } => {
@@ -347,7 +354,7 @@ impl Client {
             },
             SftpClientPacket::Extended { id, extended_request, data } => {
                 match extended_request.as_str() {
-                    "statvfs@openssh.com" => {
+                    /*"statvfs@openssh.com" => {
                         let mut data = data.as_slice();
                         let path = read_string!(data);
                         if data.len() != 0 { Err(ProtocolError::InvalidLength)? }
@@ -379,12 +386,11 @@ impl Client {
                         if data.len() != 0 { Err(ProtocolError::InvalidLength)? }
                         let file = self.file_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
                         io_result_resp(id, file.sync_all().await)
-                    },
+                    },*/
                     _ => status_resp(id, StatusCode::OpUnsupported),
                 }
             },
         };
-        //println!("response: {:?}", resp);
         Ok(resp)
     }
 }
