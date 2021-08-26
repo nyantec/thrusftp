@@ -273,11 +273,13 @@ impl Client {
 
                 file.seek(SeekFrom::Start(offset)).await?;
                 let mut data = vec![0u8; len as usize];
-                let mut read_len = 1;
+                let mut read_len = 0;
                 let mut total_read_len = 0;
-                while read_len != 0 && total_read_len < len as usize {
+                loop {
+                    if total_read_len >= len as usize { break; }
                     read_len = file.read(&mut data[read_len..]).await?;
                     total_read_len += read_len;
+                    if read_len == 0 { break; }
                 }
                 if total_read_len == 0 {
                     status_resp(id, StatusCode::Eof)
