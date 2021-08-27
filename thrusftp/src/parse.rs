@@ -3,19 +3,19 @@ use crate::error::Result;
 use std::convert::TryInto;
 
 pub trait Serialize {
-    fn serialize(&self) -> anyhow::Result<Vec<u8>>;
+    fn serialize(&self) -> Result<Vec<u8>>;
 }
 pub trait Deserialize: Sized {
-    fn deserialize(input: &mut &[u8]) -> anyhow::Result<Self>;
+    fn deserialize(input: &mut &[u8]) -> Result<Self>;
 }
 
 impl Serialize for u8 {
-    fn serialize(&self) -> anyhow::Result<Vec<u8>> {
+    fn serialize(&self) -> Result<Vec<u8>> {
         Ok(vec![*self; 1])
     }
 }
 impl Deserialize for u8 {
-    fn deserialize(input: &mut &[u8]) -> anyhow::Result<Self> {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
         let res = input[0];
         *input = &mut &input[1..];
         Ok(res)
@@ -23,12 +23,12 @@ impl Deserialize for u8 {
 }
 
 impl Serialize for u32 {
-    fn serialize(&self) -> anyhow::Result<Vec<u8>> {
+    fn serialize(&self) -> Result<Vec<u8>> {
         Ok(self.to_be_bytes().to_vec())
     }
 }
 impl Deserialize for u32 {
-    fn deserialize(input: &mut &[u8]) -> anyhow::Result<Self> {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
         let res = Self::from_be_bytes((input[..4]).try_into()?);
         *input = &mut &input[4..];
         Ok(res)
@@ -36,12 +36,12 @@ impl Deserialize for u32 {
 }
 
 impl Serialize for u64 {
-    fn serialize(&self) -> anyhow::Result<Vec<u8>> {
+    fn serialize(&self) -> Result<Vec<u8>> {
         Ok(self.to_be_bytes().to_vec())
     }
 }
 impl Deserialize for u64 {
-    fn deserialize(input: &mut &[u8]) -> anyhow::Result<Self> {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
         let res = Self::from_be_bytes((input[..8]).try_into()?);
         *input = &mut &input[8..];
         Ok(res)
@@ -49,7 +49,7 @@ impl Deserialize for u64 {
 }
 
 impl Serialize for String {
-    fn serialize(&self) -> anyhow::Result<Vec<u8>> {
+    fn serialize(&self) -> Result<Vec<u8>> {
         let mut res = Vec::new();
         let len = self.len() as u32;
         res.append(&mut len.serialize()?);
@@ -58,16 +58,16 @@ impl Serialize for String {
     }
 }
 impl Deserialize for String {
-    fn deserialize(input: &mut &[u8]) -> anyhow::Result<Self> {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
         let len = u32::deserialize(input)? as usize;
-        let res = Self::from_utf8_lossy(&input[..len]);
+        let res = String::from_utf8((&input[..len]).to_vec())?;
         *input = &mut &input[len..];
         Ok(res.to_string())
     }
 }
 
-impl Serialize for Data {
-    fn serialize(&self) -> anyhow::Result<Vec<u8>> {
+impl Serialize for VecU8 {
+    fn serialize(&self) -> Result<Vec<u8>> {
         let mut res = Vec::new();
         let len = self.0.len() as u32;
         res.append(&mut len.serialize()?);
@@ -75,15 +75,15 @@ impl Serialize for Data {
         Ok(res)
     }
 }
-impl Deserialize for Data {
-    fn deserialize(input: &mut &[u8]) -> anyhow::Result<Self> {
+impl Deserialize for VecU8 {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
         let len = u32::deserialize(input)? as usize;
-        Ok(Data(input[..len].to_vec()))
+        Ok(VecU8(input[..len].to_vec()))
     }
 }
 
 impl<T> Serialize for Vec<T> where T: Serialize {
-    fn serialize(&self) -> anyhow::Result<Vec<u8>> {
+    fn serialize(&self) -> Result<Vec<u8>> {
         let mut res = Vec::new();
         let len = self.len() as u32;
         res.append(&mut len.serialize()?);
@@ -94,7 +94,7 @@ impl<T> Serialize for Vec<T> where T: Serialize {
     }
 }
 impl<T> Deserialize for Vec<T> where T: Deserialize {
-    fn deserialize(input: &mut &[u8]) -> anyhow::Result<Self> {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
         let mut res = Vec::new();
         let len = u32::deserialize(input)? as usize;
         for _i in 0..len {

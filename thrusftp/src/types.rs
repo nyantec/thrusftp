@@ -38,23 +38,23 @@ pub struct Attrs {
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[bin_ser(repr = u32)]
 pub enum StatusCode {
-    #[bin_ser(num = 0)]
+    #[bin_ser(val = 0)]
     r#Ok,
-    #[bin_ser(num = 1)]
+    #[bin_ser(val = 1)]
     Eof,
-    #[bin_ser(num = 2)]
+    #[bin_ser(val = 2)]
     NoSuchFile,
-    #[bin_ser(num = 3)]
+    #[bin_ser(val = 3)]
     PermissionDenied,
-    #[bin_ser(num = 4)]
+    #[bin_ser(val = 4)]
     Failure,
-    #[bin_ser(num = 5)]
+    #[bin_ser(val = 5)]
     BadMessage,
-    #[bin_ser(num = 6)]
+    #[bin_ser(val = 6)]
     NoConnection,
-    #[bin_ser(num = 7)]
+    #[bin_ser(val = 7)]
     ConnectionLost,
-    #[bin_ser(num = 8)]
+    #[bin_ser(val = 8)]
     OpUnsupported,
 }
 
@@ -76,161 +76,161 @@ pub type Handle = String;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[bin_ser(repr = u8)]
 pub enum SftpClientPacket {
-    #[bin_ser(num = 1)]
+    #[bin_ser(val = 1)]
     Init {
         version: u32,
         //extensions: Vec<Extension>,
     },
-    #[bin_ser(num = 3)]
+    #[bin_ser(val = 3)]
     Open {
         id: u32,
         filename: String,
         pflags: Pflags,
         attrs: Attrs,
     },
-    #[bin_ser(num = 4)]
+    #[bin_ser(val = 4)]
     Close {
         id: u32,
         handle: Handle,
     },
-    #[bin_ser(num = 5)]
+    #[bin_ser(val = 5)]
     Read {
         id: u32,
         handle: Handle,
         offset: u64,
         len: u32,
     },
-    #[bin_ser(num = 6)]
+    #[bin_ser(val = 6)]
     Write {
         id: u32,
         handle: Handle,
         offset: u64,
-        data: Data,
+        data: VecU8,
     },
-    #[bin_ser(num = 7)]
+    #[bin_ser(val = 7)]
     Lstat {
         id: u32,
         path: String,
     },
-    #[bin_ser(num = 8)]
+    #[bin_ser(val = 8)]
     Fstat {
         id: u32,
         handle: Handle,
     },
-    #[bin_ser(num = 9)]
+    #[bin_ser(val = 9)]
     Setstat {
         id: u32,
         path: String,
         attrs: Attrs,
     },
-    #[bin_ser(num = 10)]
+    #[bin_ser(val = 10)]
     Fsetstat {
         id: u32,
         handle: Handle,
         attrs: Attrs,
     },
-    #[bin_ser(num = 11)]
+    #[bin_ser(val = 11)]
     Opendir {
         id: u32,
         path: String,
     },
-    #[bin_ser(num = 12)]
+    #[bin_ser(val = 12)]
     Readdir {
         id: u32,
         handle: Handle,
     },
-    #[bin_ser(num = 13)]
+    #[bin_ser(val = 13)]
     Remove {
         id: u32,
         filename: String,
     },
-    #[bin_ser(num = 14)]
+    #[bin_ser(val = 14)]
     Mkdir {
         id: u32,
         path: String,
         attrs: Attrs,
     },
-    #[bin_ser(num = 15)]
+    #[bin_ser(val = 15)]
     Rmdir {
         id: u32,
         path: String,
     },
-    #[bin_ser(num = 16)]
+    #[bin_ser(val = 16)]
     Realpath {
         id: u32,
         path: String,
     },
-    #[bin_ser(num = 17)]
+    #[bin_ser(val = 17)]
     Stat {
         id: u32,
         path: String,
     },
-    #[bin_ser(num = 18)]
+    #[bin_ser(val = 18)]
     Rename {
         id: u32,
         oldpath: String,
         newpath: String,
     },
-    #[bin_ser(num = 19)]
+    #[bin_ser(val = 19)]
     Readlink {
         id: u32,
         path: String,
     },
-    #[bin_ser(num = 20)]
+    #[bin_ser(val = 20)]
     Symlink {
         id: u32,
         linkpath: String,
         targetpath: String,
     },
 
-    #[bin_ser(num = 200)]
+    #[bin_ser(val = 200)]
     Extended {
         id: u32,
         extended_request: String,
-        data: Data,
+        data: VecU8,
     },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[bin_ser(repr = u8)]
 pub enum SftpServerPacket {
-    #[bin_ser(num = 2)]
+    #[bin_ser(val = 2)]
     Version {
         version: u32,
         //extensions: Vec<Extension>,
     },
-    #[bin_ser(num = 101)]
+    #[bin_ser(val = 101)]
     Status {
         id: u32,
         status_code: StatusCode,
         error_message: String,
         language_tag: String,
     },
-    #[bin_ser(num = 102)]
+    #[bin_ser(val = 102)]
     Handle {
         id: u32,
         handle: Handle,
     },
-    #[bin_ser(num = 103)]
+    #[bin_ser(val = 103)]
     Data {
         id: u32,
-        data: Data,
+        data: VecU8,
     },
-    #[bin_ser(num = 104)]
+    #[bin_ser(val = 104)]
     Name {
         id: u32,
         names: Vec<Name>,
     },
-    #[bin_ser(num = 105)]
+    #[bin_ser(val = 105)]
     Attrs {
         id: u32,
         attrs: Attrs,
     },
 
-    #[bin_ser(num = 201)]
+    #[bin_ser(val = 201)]
     ExtendedReply {
         id: u32,
-        data: Data,
+        data: VecU8,
     },
 }
 
@@ -268,9 +268,9 @@ impl From<libc::statvfs> for FsStats {
 }
 
 #[derive(Clone, Debug)]
-pub struct Data(pub Vec<u8>);
+pub struct VecU8(pub Vec<u8>);
 
-impl From<Vec<u8>> for Data {
+impl From<Vec<u8>> for VecU8 {
     fn from(vec: Vec<u8>) -> Self {
         Self(vec)
     }

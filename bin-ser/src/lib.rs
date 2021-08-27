@@ -41,7 +41,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
             let repr = get_attr(&attrs, "repr").expect("need repr attr");
             let variant = enum_data.variants.iter().map(|v| {
                 let variantname = &v.ident;
-                let variantnum = get_attr(&v.attrs, "num").expect("need num attr");
+                let variantval = get_attr(&v.attrs, "val").expect("need val attr");
                 match v.fields {
                     Fields::Named(ref named_fields) => {
                         let field = named_fields.named.iter().map(|f| &f.ident);
@@ -51,7 +51,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
                         let field = named_fields.named.iter().map(|f| &f.ident);
                         quote! {
                             #ident::#variantname { #( #field ),* } => {
-                                res.append(&mut <#repr>::serialize(&#variantnum)?);
+                                res.append(&mut <#repr>::serialize(&#variantval)?);
                                 #serialize_fields
                             }
                         }
@@ -59,7 +59,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
                     Fields::Unit => {
                         quote! {
                             #ident::#variantname => {
-                                res.append(&mut <#repr>::serialize(&#variantnum)?);
+                                res.append(&mut <#repr>::serialize(&#variantval)?);
                             }
                         }
                     }
@@ -128,10 +128,10 @@ pub fn derive_deserialize(input: TokenStream) -> TokenStream {
             let repr = get_attr(&attrs, "repr").expect("need repr attr");
             let variant = enum_data.variants.iter().map(|v| {
                 let variantname = &v.ident;
-                let variantnum = get_attr(&v.attrs, "num").expect("need num attr");
+                let variantval = get_attr(&v.attrs, "val").expect("need val attr");
                 let f = deserialize_fields(&v.fields);
                 quote! {
-                    #variantnum => {
+                    #variantval => {
                         #ident::#variantname #f
                     }
                 }
