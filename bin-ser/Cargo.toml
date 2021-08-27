@@ -15,4 +15,5 @@ darling = "0.13"
 proc-macro2 = "1.0"
 
 [lib]
+name = "bin_ser"
 proc-macro = true

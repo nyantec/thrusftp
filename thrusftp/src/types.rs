@@ -36,17 +36,26 @@ pub struct Attrs {
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-#[repr(u32)]
+#[bin_ser(repr = u32)]
 pub enum StatusCode {
-    r#Ok = 0,
-    Eof = 1,
-    NoSuchFile = 2,
-    PermissionDenied = 3,
-    Failure = 4,
-    BadMessage = 5,
-    NoConnection = 6,
-    ConnectionLost = 7,
-    OpUnsupported = 8,
+    #[bin_ser(num = 0)]
+    r#Ok,
+    #[bin_ser(num = 1)]
+    Eof,
+    #[bin_ser(num = 2)]
+    NoSuchFile,
+    #[bin_ser(num = 3)]
+    PermissionDenied,
+    #[bin_ser(num = 4)]
+    Failure,
+    #[bin_ser(num = 5)]
+    BadMessage,
+    #[bin_ser(num = 6)]
+    NoConnection,
+    #[bin_ser(num = 7)]
+    ConnectionLost,
+    #[bin_ser(num = 8)]
+    OpUnsupported,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -65,137 +74,164 @@ pub struct Name {
 pub type Handle = String;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[repr(u8)]
+#[bin_ser(repr = u8)]
 pub enum SftpClientPacket {
+    #[bin_ser(num = 1)]
     Init {
         version: u32,
         //extensions: Vec<Extension>,
-    } = 1,
+    },
+    #[bin_ser(num = 3)]
     Open {
         id: u32,
         filename: String,
         pflags: Pflags,
         attrs: Attrs,
-    } = 3,
+    },
+    #[bin_ser(num = 4)]
     Close {
         id: u32,
         handle: Handle,
-    } = 4,
+    },
+    #[bin_ser(num = 5)]
     Read {
         id: u32,
         handle: Handle,
         offset: u64,
         len: u32,
-    } = 5,
+    },
+    #[bin_ser(num = 6)]
     Write {
         id: u32,
         handle: Handle,
         offset: u64,
         data: Data,
-    } = 6,
+    },
+    #[bin_ser(num = 7)]
     Lstat {
         id: u32,
         path: String,
-    } = 7,
+    },
+    #[bin_ser(num = 8)]
     Fstat {
         id: u32,
         handle: Handle,
-    } = 8,
+    },
+    #[bin_ser(num = 9)]
     Setstat {
         id: u32,
         path: String,
         attrs: Attrs,
-    } = 9,
+    },
+    #[bin_ser(num = 10)]
     Fsetstat {
         id: u32,
         handle: Handle,
         attrs: Attrs,
-    } = 10,
+    },
+    #[bin_ser(num = 11)]
     Opendir {
         id: u32,
         path: String,
-    } = 11,
+    },
+    #[bin_ser(num = 12)]
     Readdir {
         id: u32,
         handle: Handle,
-    } = 12,
+    },
+    #[bin_ser(num = 13)]
     Remove {
         id: u32,
         filename: String,
-    } = 13,
+    },
+    #[bin_ser(num = 14)]
     Mkdir {
         id: u32,
         path: String,
         attrs: Attrs,
-    } = 14,
+    },
+    #[bin_ser(num = 15)]
     Rmdir {
         id: u32,
         path: String,
-    } = 15,
+    },
+    #[bin_ser(num = 16)]
     Realpath {
         id: u32,
         path: String,
-    } = 16,
+    },
+    #[bin_ser(num = 17)]
     Stat {
         id: u32,
         path: String,
-    } = 17,
+    },
+    #[bin_ser(num = 18)]
     Rename {
         id: u32,
         oldpath: String,
         newpath: String,
-    } = 18,
+    },
+    #[bin_ser(num = 19)]
     Readlink {
         id: u32,
         path: String,
-    } = 19,
+    },
+    #[bin_ser(num = 20)]
     Symlink {
         id: u32,
         linkpath: String,
         targetpath: String,
-    } = 20,
+    },
 
+    #[bin_ser(num = 200)]
     Extended {
         id: u32,
         extended_request: String,
         data: Data,
-    } = 200,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[repr(u8)]
+#[bin_ser(repr = u8)]
 pub enum SftpServerPacket {
+    #[bin_ser(num = 2)]
     Version {
         version: u32,
         //extensions: Vec<Extension>,
-    } = 2,
+    },
+    #[bin_ser(num = 101)]
     Status {
         id: u32,
         status_code: StatusCode,
         error_message: String,
         language_tag: String,
-    } = 101,
+    },
+    #[bin_ser(num = 102)]
     Handle {
         id: u32,
         handle: Handle,
-    } = 102,
+    },
+    #[bin_ser(num = 103)]
     Data {
         id: u32,
         data: Data,
-    } = 103,
+    },
+    #[bin_ser(num = 104)]
     Name {
         id: u32,
         names: Vec<Name>,
-    } = 104,
+    },
+    #[bin_ser(num = 105)]
     Attrs {
         id: u32,
         attrs: Attrs,
-    } = 105,
+    },
 
+    #[bin_ser(num = 201)]
     ExtendedReply {
         id: u32,
         data: Data,
-    } = 201,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

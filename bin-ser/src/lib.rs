@@ -1,44 +1,23 @@
 use proc_macro::{self, TokenStream};
-use quote::{quote, format_ident};
-use syn::{parse_macro_input, DeriveInput, Data, Fields};
+use quote::quote;
+use syn::{parse_macro_input, DeriveInput, Data, Fields, Expr, Attribute, ExprAssign, Path};
 
-fn destructure_fields(fields: &Fields) -> proc_macro2::TokenStream {
-    match fields {
-        Fields::Named(ref named_fields) => {
-            let field = named_fields.named.iter().map(|f| &f.ident);
-            quote! { { #( #field ),* } }
-        },
-        Fields::Unnamed(ref unnamed_fields) => {
-            let field = (0..unnamed_fields.unnamed.len()).map(|x| format_ident!("field{}", x));
-            quote! { ( #( #field ),* ) }
-        },
-        Fields::Unit => {
-            quote! {}
-        }
-    }
+fn parse_attr(attr: &Attribute) -> (Path, Expr) {
+    let e: ExprAssign = attr.parse_args().unwrap();
+    let path = if let Expr::Path(path) = *e.left { path.path } else { panic!(); };
+    (path, *e.right)
 }
 
-fn serialize_fields(fields: &Fields) -> proc_macro2::TokenStream {
-    match fields {
-        Fields::Named(ref named_fields) => {
-            let field = named_fields.named.iter().map(|f| &f.ident);
-            quote! {
-                #( res.append(&mut Serialize::serialize(#field)?); )*
-            }
-        },
-        Fields::Unnamed(ref unnamed_fields) => {
-            let field = (0..unnamed_fields.unnamed.len()).map(|x| format_ident!("field{}", x));
-            quote! {
-                #( res.append(&mut Serialize::serialize(#field)?); )*
-            }
-        },
-        Fields::Unit => {
-            quote! {}
-        }
-    }
+fn get_attr(attrs: &Vec<Attribute>, ident: &str) -> Option<Expr> {
+    attrs.iter()
+        .filter(|x| x.path.is_ident("bin_ser"))
+        .map(parse_attr)
+        .filter(|(path, _)| path.is_ident(ident))
+        .map(|(_, lit)| lit)
+        .next()
 }
 
-#[proc_macro_derive(Serialize)]
+#[proc_macro_derive(Serialize, attributes(bin_ser))]
 pub fn derive_serialize(input: TokenStream) -> TokenStream {
     let DeriveInput { ident, data, attrs, .. } = parse_macro_input!(input);
 
@@ -59,17 +38,32 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
             _ => unimplemented!(),
         },
         Data::Enum(ref enum_data) => {
-            let repr: syn::Expr = attrs.iter().filter(|x| x.path.is_ident("repr")).next().unwrap().parse_args().unwrap();
+            let repr = get_attr(&attrs, "repr").expect("need repr attr");
             let variant = enum_data.variants.iter().map(|v| {
                 let variantname = &v.ident;
-                let variantnum = &v.discriminant.as_ref().expect("need discriminant").1;
-                let destructure = destructure_fields(&v.fields);
-                let serialize = serialize_fields(&v.fields);
-                quote! {
-                    #ident::#variantname #destructure => {
-                        res.append(&mut <#repr>::serialize(&#variantnum)?);
-                        #serialize
+                let variantnum = get_attr(&v.attrs, "num").expect("need num attr");
+                match v.fields {
+                    Fields::Named(ref named_fields) => {
+                        let field = named_fields.named.iter().map(|f| &f.ident);
+                        let serialize_fields = quote! {
+                            #( res.append(&mut Serialize::serialize(#field)?); )*
+                        };
+                        let field = named_fields.named.iter().map(|f| &f.ident);
+                        quote! {
+                            #ident::#variantname { #( #field ),* } => {
+                                res.append(&mut <#repr>::serialize(&#variantnum)?);
+                                #serialize_fields
+                            }
+                        }
+                    },
+                    Fields::Unit => {
+                        quote! {
+                            #ident::#variantname => {
+                                res.append(&mut <#repr>::serialize(&#variantnum)?);
+                            }
+                        }
                     }
+                    _ => unimplemented!(),
                 }
             });
             quote! {
@@ -119,7 +113,7 @@ fn deserialize_fields(fields: &Fields) -> proc_macro2::TokenStream {
     }
 }
 
-#[proc_macro_derive(Deserialize)]
+#[proc_macro_derive(Deserialize, attributes(bin_ser))]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
     let DeriveInput { ident, data, attrs, .. } = parse_macro_input!(input);
 
@@ -131,13 +125,13 @@ pub fn derive_deserialize(input: TokenStream) -> TokenStream {
             }
         },
         Data::Enum(ref enum_data) => {
-            let repr: syn::Expr = attrs.iter().filter(|x| x.path.is_ident("repr")).next().unwrap().parse_args().unwrap();
+            let repr = get_attr(&attrs, "repr").expect("need repr attr");
             let variant = enum_data.variants.iter().map(|v| {
                 let variantname = &v.ident;
-                let num = &v.discriminant.as_ref().expect("need discriminant").1;
+                let variantnum = get_attr(&v.attrs, "num").expect("need num attr");
                 let f = deserialize_fields(&v.fields);
                 quote! {
-                    #num => {
+                    #variantnum => {
                         #ident::#variantname #f
                     }
                 }
