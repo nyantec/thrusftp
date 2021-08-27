@@ -371,11 +371,12 @@ pub trait Handler: Send + Sized {
 }
 
 /// Trait used to create new handlers when clients connect.
+#[async_trait]
 pub trait Server {
     /// The type of handlers.
     type Handler: Handler + Send;
     /// Called when a new client connects.
-    fn new(&mut self, peer_addr: Option<std::net::SocketAddr>) -> Self::Handler;
+    async fn new(&mut self, peer_addr: Option<std::net::SocketAddr>) -> Self::Handler;
 }
 
 /// Run a server.
@@ -396,7 +397,7 @@ pub async fn run<H: Server + Send + 'static>(
     }
     while let Ok((socket, _)) = socket.accept().await {
         let config = config.clone();
-        let server = server.new(socket.peer_addr().ok());
+        let server = server.new(socket.peer_addr().ok()).await;
         tokio::spawn(run_stream(config, socket, server));
     }
     Ok(())
