@@ -1,7 +1,9 @@
 [workspace]
 members = [
   "./bin-ser",
-  "./thrusftp",
+  "./thrusftp-protocol",
+  "./thrusftp-server",
+  "./thrusftp-fs-local",
   "./thrussh/thrussh",
   "./thrussh/thrussh-keys",
 ]

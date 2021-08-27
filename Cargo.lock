@@ -1054,13 +1054,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "thrusftp"
+name = "thrusftp_fs_local"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "libc",
+ "thrusftp_protocol",
+ "tokio",
+]
+
+[[package]]
+name = "thrusftp_protocol"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "bin_ser",
- "libc",
+]
+
+[[package]]
+name = "thrusftp_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "thrusftp_fs_local",
+ "thrusftp_protocol",
  "thrussh",
  "thrussh-keys",
  "tokio",

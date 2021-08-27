@@ -1,0 +1,14 @@
+[package]
+name = "thrusftp_protocol"
+version = "0.1.0"
+edition = "2018"
+authors = ["The thrusftp Authors <oss@nyantec.com>"]
+description = "Implementation of the SFTP protocol"
+repository = "https://github.com/nyantec/thrusftp"
+license = "MirOS"
+readme = "README.md"
+
+[dependencies]
+bin_ser = { path = "../bin-ser" }
+anyhow = "1.0"
+async-trait = "0.1"

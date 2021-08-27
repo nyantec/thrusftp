@@ -1,5 +1,5 @@
 use crate::types::*;
-use crate::error::Result;
+use anyhow::Result;
 use std::convert::TryInto;
 
 pub trait Serialize {

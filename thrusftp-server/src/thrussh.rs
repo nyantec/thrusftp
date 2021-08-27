@@ -1,11 +1,3 @@
-mod fs_sync;
-mod fs_async;
-mod fs;
-mod error;
-mod types;
-mod parse;
-mod server;
-
 use thrussh::*;
 use thrussh::server::Session;
 use async_trait::async_trait;
@@ -13,30 +5,29 @@ use std::convert::TryInto;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 
-use crate::server::SftpServer;
-use crate::types::*;
-use crate::error::Result;
-use crate::parse::{Serialize, Deserialize};
-use crate::fs::LocalFs;
+use crate::SftpServer;
+use thrusftp_protocol::types::*;
+use thrusftp_protocol::Fs;
+use thrusftp_protocol::parse::{Serialize, Deserialize};
+use anyhow::Result;
 
-#[tokio::main]
-async fn main() {
+pub async fn start_server<T: 'static + Fs + Send + Sync>(server: Arc<SftpServer<T>>) {
     let mut config = thrussh::server::Config::default();
     config.connection_timeout = Some(std::time::Duration::from_secs(300));
     config.auth_rejection_time = std::time::Duration::from_millis(300);
     config.keys.push(thrussh_keys::key::KeyPair::generate_ed25519().unwrap());
-    let server = Server { server: SftpServer::new(LocalFs) };
+    let server = Server { server };
     thrussh::server::run(Arc::new(config), "0.0.0.0:2222", server).await.unwrap();
 }
 
-struct Server {
-    server: Arc<SftpServer<LocalFs>>,
+struct Server<T: Fs + Send + Sync> {
+    server: Arc<SftpServer<T>>,
 }
 
 #[async_trait]
-impl thrussh::server::Server for Server {
-    type Handler = Client;
-    async fn new(&mut self, _: Option<std::net::SocketAddr>) -> Client {
+impl<T: Fs + Send + Sync> thrussh::server::Server for Server<T> {
+    type Handler = Client<T>;
+    async fn new(&mut self, _: Option<std::net::SocketAddr>) -> Client<T> {
         Client {
             recv_buf: Vec::new(),
             handle: self.server.clone().create_client_handle("client").await,
@@ -45,14 +36,14 @@ impl thrussh::server::Server for Server {
     }
 }
 
-struct Client {
+struct Client<T: Fs + Send + Sync> {
     recv_buf: Vec<u8>,
     handle: String,
-    server: Arc<SftpServer<LocalFs>>,
+    server: Arc<SftpServer<T>>,
 }
 
 #[async_trait]
-impl thrussh::server::Handler for Client {
+impl<T: Fs + Send + Sync> thrussh::server::Handler for Client<T> {
     type Error = anyhow::Error;
 
     async fn shell_request(self, channel: ChannelId, mut session: Session) -> Result<(Self, Session)> {

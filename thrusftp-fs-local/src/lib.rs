@@ -1,13 +1,15 @@
+mod fs_sync;
+mod fs_async;
+
 use std::fs::{Metadata, Permissions};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use tokio::fs;
 use tokio::io::{AsyncSeekExt, AsyncReadExt, AsyncWriteExt, SeekFrom};
 use async_trait::async_trait;
+use anyhow::Result;
 
-use crate::fs_async;
-use crate::server::{Fs, FsHandle};
-use crate::error::Result;
-use crate::types::{Attrs, Pflags, Name, FsStats};
+use thrusftp_protocol::{Fs, FsHandle};
+use thrusftp_protocol::types::{Attrs, Pflags, Name, FsStats};
 
 pub struct LocalFs;
 
@@ -31,33 +33,29 @@ async fn apply_attrs_handle(handle: &mut fs::File, attrs: Attrs) -> std::io::Res
     Ok(())
 }
 
-impl From<Metadata> for Attrs {
-    fn from(metadata: Metadata) -> Attrs {
-        Attrs {
-            size: Some(metadata.len()),
-            uid_gid: Some((metadata.uid(), metadata.gid())),
-            permissions: Some(metadata.permissions().mode()),
-            atime_mtime: Some((metadata.atime() as u32, metadata.mtime() as u32)),
-            extended_attrs: vec![],
-        }
+fn attrs_from_metadata(metadata: Metadata) -> Attrs {
+    Attrs {
+        size: Some(metadata.len()),
+        uid_gid: Some((metadata.uid(), metadata.gid())),
+        permissions: Some(metadata.permissions().mode()),
+        atime_mtime: Some((metadata.atime() as u32, metadata.mtime() as u32)),
+        extended_attrs: vec![],
     }
 }
 
-impl From<libc::statvfs> for FsStats {
-    fn from(f: libc::statvfs) -> Self {
-        Self {
-            f_bsize: f.f_bsize,
-            f_frsize: f.f_frsize,
-            f_blocks: f.f_blocks,
-            f_bfree: f.f_bfree,
-            f_bavail: f.f_bavail,
-            f_files: f.f_files,
-            f_ffree: f.f_ffree,
-            f_favail: f.f_favail,
-            f_fsid: f.f_fsid,
-            f_flag: f.f_flag,
-            f_namemax: f.f_namemax,
-        }
+fn fsstats_from_statvfs(f: libc::statvfs) -> FsStats {
+    FsStats {
+        f_bsize: f.f_bsize,
+        f_frsize: f.f_frsize,
+        f_blocks: f.f_blocks,
+        f_bfree: f.f_bfree,
+        f_bavail: f.f_bavail,
+        f_files: f.f_files,
+        f_ffree: f.f_ffree,
+        f_favail: f.f_favail,
+        f_fsid: f.f_fsid,
+        f_flag: f.f_flag,
+        f_namemax: f.f_namemax,
     }
 }
 
@@ -115,10 +113,10 @@ impl Fs for LocalFs {
         Ok(())
     }
     async fn lstat(&self, path: String) -> Result<Attrs> {
-        Ok(fs::symlink_metadata(path).await?.into())
+        Ok(attrs_from_metadata(fs::symlink_metadata(path).await?))
     }
     async fn fstat(&self, handle: &mut Self::FileHandle) -> Result<Attrs> {
-        Ok(handle.metadata().await?.into())
+        Ok(attrs_from_metadata(handle.metadata().await?))
     }
     async fn setstat(&self, path: String, attrs: Attrs) -> Result<()> {
         Ok(apply_attrs_path(path, attrs).await?)
@@ -136,7 +134,7 @@ impl Fs for LocalFs {
                 Name {
                     filename: e.file_name().to_string_lossy().to_string(),
                     longname: e.file_name().to_string_lossy().to_string(),
-                    attrs: metadata.into(),
+                    attrs: attrs_from_metadata(metadata),
                 }
             ])
         } else {
@@ -158,7 +156,7 @@ impl Fs for LocalFs {
         Ok(fs::canonicalize(path).await?.to_string_lossy().to_string())
     }
     async fn stat(&self, path: String) -> Result<Attrs> {
-        Ok(fs::metadata(path).await?.into())
+        Ok(attrs_from_metadata(fs::metadata(path).await?))
     }
     async fn rename(&self, oldpath: String, newpath: String) -> Result<()> {
         if fs::metadata(&newpath).await.is_ok() {
@@ -184,7 +182,7 @@ impl Fs for LocalFs {
     }
     async fn statvfs_supported(&self) -> bool { true }
     async fn statvfs(&self, path: String) -> Result<FsStats> {
-        Ok(fs_async::statvfs(path).await?.into())
+        Ok(fsstats_from_statvfs(fs_async::statvfs(path).await?))
     }
     async fn hardlink_supported(&self) -> bool { true }
     async fn hardlink(&self, oldpath: String, newpath: String) -> Result<()> {
