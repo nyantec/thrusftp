@@ -64,7 +64,7 @@ pub struct Extension {
     pub data: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Name {
     pub filename: String,
     pub longname: String,
@@ -277,24 +277,6 @@ pub struct FsStats {
     pub f_fsid: u64,
     pub f_flag: u64,
     pub f_namemax: u64,
-}
-
-impl From<libc::statvfs> for FsStats {
-    fn from(f: libc::statvfs) -> Self {
-        Self {
-            f_bsize: f.f_bsize,
-            f_frsize: f.f_frsize,
-            f_blocks: f.f_blocks,
-            f_bfree: f.f_bfree,
-            f_bavail: f.f_bavail,
-            f_files: f.f_files,
-            f_ffree: f.f_ffree,
-            f_favail: f.f_favail,
-            f_fsid: f.f_fsid,
-            f_flag: f.f_flag,
-            f_namemax: f.f_namemax,
-        }
-    }
 }
 
 /// Vec that has no length on-wire. It ends when the stream ends.

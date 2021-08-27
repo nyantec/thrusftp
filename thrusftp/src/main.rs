@@ -1,23 +1,23 @@
 mod fs_sync;
 mod fs_async;
+mod fs;
 mod error;
 mod types;
 mod parse;
+mod server;
 
-use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt, SeekFrom};
 use thrussh::*;
 use thrussh::server::Session;
 use async_trait::async_trait;
 use std::convert::TryInto;
 use std::sync::Arc;
-use std::collections::HashMap;
-use std::fs::{Metadata, Permissions};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use tokio::io::AsyncReadExt;
 
+use crate::server::SftpServer;
 use crate::types::*;
-use crate::error::{ProtocolError, Result};
+use crate::error::Result;
 use crate::parse::{Serialize, Deserialize};
+use crate::fs::LocalFs;
 
 #[tokio::main]
 async fn main() {
@@ -25,61 +25,34 @@ async fn main() {
     config.connection_timeout = Some(std::time::Duration::from_secs(300));
     config.auth_rejection_time = std::time::Duration::from_millis(300);
     config.keys.push(thrussh_keys::key::KeyPair::generate_ed25519().unwrap());
-    let server = Server{};
+    let server = Server { server: SftpServer::new(LocalFs) };
     thrussh::server::run(Arc::new(config), "0.0.0.0:2222", server).await.unwrap();
 }
 
-#[derive(Clone, Debug)]
-struct Server { }
-
-impl server::Server for Server {
-    type Handler = Client;
-    fn new(&mut self, _: Option<std::net::SocketAddr>) -> Client {
-        Client::default()
-    }
+struct Server {
+    server: Arc<SftpServer<LocalFs>>,
 }
 
-impl From<Metadata> for Attrs {
-    fn from(metadata: Metadata) -> Attrs {
-        Attrs {
-            size: Some(metadata.len()),
-            uid_gid: Some((metadata.uid(), metadata.gid())),
-            permissions: Some(metadata.permissions().mode()),
-            atime_mtime: Some((metadata.atime() as u32, metadata.mtime() as u32)),
-            extended_attrs: vec![],
+#[async_trait]
+impl thrussh::server::Server for Server {
+    type Handler = Client;
+    async fn new(&mut self, _: Option<std::net::SocketAddr>) -> Client {
+        Client {
+            recv_buf: Vec::new(),
+            handle: self.server.clone().create_client_handle("client").await,
+            server: self.server.clone(),
         }
     }
 }
 
-async fn apply_attrs_path(path: String, attrs: Attrs) -> std::io::Result<()> {
-    if let Some(permissions) = attrs.permissions {
-        fs::set_permissions(&path, Permissions::from_mode(permissions)).await?;
-    }
-    if let Some(size) = attrs.size {
-        fs_async::truncate64(&path, size).await?;
-    }
-    Ok(())
-}
-
-async fn apply_attrs_file(file: &mut fs::File, attrs: Attrs) -> std::io::Result<()> {
-    if let Some(permissions) = attrs.permissions {
-        file.set_permissions(Permissions::from_mode(permissions)).await?;
-    }
-    if let Some(size) = attrs.size {
-        file.set_len(size).await?;
-    }
-    Ok(())
-}
-
-#[derive(Default, Debug)]
 struct Client {
-    file_handles: HashMap<Handle, fs::File>,
-    dir_handles: HashMap<Handle, fs::ReadDir>,
     recv_buf: Vec<u8>,
+    handle: String,
+    server: Arc<SftpServer<LocalFs>>,
 }
 
 #[async_trait]
-impl server::Handler for Client {
+impl thrussh::server::Handler for Client {
     type Error = anyhow::Error;
 
     async fn shell_request(self, channel: ChannelId, mut session: Session) -> Result<(Self, Session)> {
@@ -101,8 +74,8 @@ impl server::Handler for Client {
         Ok((self, session))
     }
 
-    async fn auth_publickey(self, _: &str, _: &thrussh_keys::key::PublicKey) -> Result<(Self, server::Auth)> {
-        Ok((self, server::Auth::Accept))
+    async fn auth_publickey(self, _: &str, _: &thrussh_keys::key::PublicKey) -> Result<(Self, thrussh::server::Auth)> {
+        Ok((self, thrussh::server::Auth::Accept))
     }
 
     async fn data(mut self, channel: ChannelId, mut data: &[u8], mut session: Session) -> Result<(Self, Session)> {
@@ -123,7 +96,7 @@ impl server::Handler for Client {
                     let packet = SftpClientPacket::deserialize(&mut &recv_buf[4..]).unwrap();
                     self.recv_buf.clear();
 
-                    let resp = self.process_packet(packet).await.unwrap();
+                    let resp = self.server.clone().process(&self.handle, packet).await;
 
                     let mut resp_buf = Vec::new();
                     let mut resp_bytes = resp.serialize().unwrap();
@@ -135,277 +108,5 @@ impl server::Handler for Client {
         }
 
         Ok((self, session))
-    }
-}
-
-impl Client {
-    async fn process_packet(&mut self, packet: SftpClientPacket) -> Result<SftpServerPacket> {
-        let resp = match packet {
-            SftpClientPacket::Init { .. } => {
-                SftpServerPacket::Version {
-                    version: 3,
-                    extensions: vec![
-                        Extension {
-                            name: "statvfs@openssh.com".to_string(),
-                            data: "2".to_string(),
-                        },
-                        Extension {
-                            name: "posix-rename@openssh.com".to_string(),
-                            data: "1".to_string(),
-                        },
-                        Extension {
-                            name: "fsync@openssh.com".to_string(),
-                            data: "1".to_string(),
-                        },
-                        Extension {
-                            name: "hardlink@openssh.com".to_string(),
-                            data: "1".to_string(),
-                        },
-                    ].into(),
-                }
-            },
-            SftpClientPacket::Realpath { id, path } => {
-                let canonicalized = fs::canonicalize(path).await?;
-                SftpServerPacket::Name {
-                    id,
-                    names: vec![
-                        Name {
-                            filename: canonicalized.to_string_lossy().to_string(),
-                            longname: "".to_string(),
-                            attrs: Attrs {
-                                size: None,
-                                uid_gid: None,
-                                permissions: None,
-                                atime_mtime: None,
-                                extended_attrs: vec![],
-                            },
-                        },
-                    ],
-                }
-            },
-            SftpClientPacket::Opendir { id, path } => {
-                let mut num = 0u64;
-                let mut handle;
-                loop {
-                    handle = format!("{}{}", path, num);
-                    if !self.dir_handles.contains_key(&handle) { break; }
-                    num += 1;
-                }
-
-                self.dir_handles.insert(handle.clone(), fs::read_dir(path).await?);
-                SftpServerPacket::Handle {
-                    id,
-                    handle,
-                }
-            },
-            SftpClientPacket::Readdir { id, handle } => {
-                let iter = self.dir_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
-
-                if let Some(e) = iter.next_entry().await? {
-                    let metadata = e.metadata().await?;
-                    SftpServerPacket::Name {
-                        id,
-                        names: vec![
-                            Name {
-                                filename: e.file_name().to_string_lossy().to_string(),
-                                longname: e.file_name().to_string_lossy().to_string(),
-                                attrs: metadata.into(),
-                            }
-                        ]
-                    }
-                } else {
-                    status_resp(id, StatusCode::Eof)
-                }
-            },
-            SftpClientPacket::Close { id, handle } => {
-                if let Some(read_dir) = self.dir_handles.remove(&handle) {
-                    drop(read_dir);
-                    status_resp(id, StatusCode::r#Ok)
-                } else if let Some(mut file) = self.file_handles.remove(&handle) {
-                    file.flush().await?;
-                    drop(file);
-                    status_resp(id, StatusCode::r#Ok)
-                } else {
-                    Err(ProtocolError::NoSuchHandle)?
-                }
-            },
-            SftpClientPacket::Lstat { id, path } => {
-                match fs::symlink_metadata(path).await {
-                    Err(e) => io_error_resp(id, e),
-                    Ok(attrs) => SftpServerPacket::Attrs { id, attrs: attrs.into() },
-                }
-            },
-            SftpClientPacket::Stat { id, path } => {
-                match fs::metadata(path).await {
-                    Err(e) => io_error_resp(id, e),
-                    Ok(attrs) => SftpServerPacket::Attrs { id, attrs: attrs.into() },
-                }
-            },
-            SftpClientPacket::Fstat { id, handle } => {
-                let file = self.file_handles.get(&handle).ok_or(ProtocolError::NoSuchHandle)?;
-                match file.metadata().await {
-                    Err(e) => io_error_resp(id, e),
-                    Ok(attrs) => SftpServerPacket::Attrs { id, attrs: attrs.into() },
-                }
-            },
-            SftpClientPacket::Open { id, filename, pflags, attrs } => {
-                let mut num = 0u64;
-                let mut handle;
-                loop {
-                    handle = format!("{}{}", filename, num);
-                    if !self.file_handles.contains_key(&handle) { break; }
-                    num += 1;
-                }
-
-                let mut options = fs::OpenOptions::new();
-                if pflags.read   { options.read(true); }
-                if pflags.write  { options.write(true); }
-                if pflags.append { options.append(true); }
-                if pflags.creat  { options.create(true); }
-                if pflags.trunc  { options.truncate(true); }
-                if pflags.excl   { options.create_new(true); }
-                if let Some(permissions) = attrs.permissions {
-                    options.mode(permissions);
-                }
-                match options.open(filename).await {
-                    Err(e) => io_error_resp(id, e),
-                    Ok(file) => {
-                        self.file_handles.insert(handle.clone(), file);
-                        SftpServerPacket::Handle { id, handle }
-                    },
-                }
-            },
-            SftpClientPacket::Read { id, handle, offset, len } => {
-                let file = self.file_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
-
-                file.seek(SeekFrom::Start(offset)).await?;
-                let mut data = vec![0u8; len as usize];
-                let mut read_len = 0;
-                let mut total_read_len = 0;
-                loop {
-                    if total_read_len >= len as usize { break; }
-                    read_len = file.read(&mut data[read_len..]).await?;
-                    total_read_len += read_len;
-                    if read_len == 0 { break; }
-                }
-                if total_read_len == 0 {
-                    status_resp(id, StatusCode::Eof)
-                } else {
-                    data.truncate(total_read_len);
-                    SftpServerPacket::Data { id, data: data.into() }
-                }
-            },
-            SftpClientPacket::Write { id, handle, offset, data } => {
-                let file = self.file_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
-
-                file.seek(SeekFrom::Start(offset)).await?;
-                file.write_all(&data.0).await?;
-                status_resp(id, StatusCode::r#Ok)
-            },
-            SftpClientPacket::Setstat { id, path, attrs } => {
-                io_result_resp(id, apply_attrs_path(path, attrs).await)
-            },
-            SftpClientPacket::Fsetstat { id, handle, attrs } => {
-                let file = self.file_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
-                io_result_resp(id, apply_attrs_file(file, attrs).await)
-            },
-            SftpClientPacket::Remove { id, filename } => {
-                io_result_resp(id, fs::remove_file(filename).await)
-            },
-            SftpClientPacket::Mkdir { id, path, attrs } => {
-                // TODO attrs
-                // https://github.com/rust-lang/rust/issues/22415
-                io_result_resp(id, fs::create_dir(path).await)
-            },
-            SftpClientPacket::Rmdir { id, path } => {
-                io_result_resp(id, fs::remove_dir(path).await)
-            },
-            SftpClientPacket::Rename { id, oldpath, newpath } => {
-                if fs::metadata(&newpath).await.is_ok() {
-                    // target already exists
-                    io_error_resp(id, std::io::ErrorKind::AlreadyExists.into())
-                } else {
-                    io_result_resp(id, fs::rename(oldpath, newpath).await)
-                }
-            },
-            SftpClientPacket::Symlink { id, linkpath, targetpath } => {
-                io_result_resp(id, fs::symlink(targetpath, linkpath).await)
-            },
-            SftpClientPacket::Readlink { id, path } => {
-                match fs::read_link(path).await {
-                    Err(e) => io_error_resp(id, e),
-                    Ok(target) => SftpServerPacket::Name {
-                        id,
-                        names: vec![
-                            Name {
-                                filename: target.to_string_lossy().to_string(),
-                                longname: "".to_string(),
-                                attrs: Attrs {
-                                    size: None,
-                                    uid_gid: None,
-                                    permissions: None,
-                                    atime_mtime: None,
-                                    extended_attrs: vec![],
-                                },
-                            },
-                        ],
-                    },
-                }
-            },
-            SftpClientPacket::Extended { id, extended_request } => {
-                match extended_request {
-                    ExtendedRequest::OpensshStatvfs { path } => {
-                        match fs_async::statvfs(path).await {
-                            Err(e) => io_error_resp(id, e),
-                            Ok(stat) => {
-                                let data = FsStats::from(stat).serialize()?.into();
-                                SftpServerPacket::ExtendedReply { id, data }
-                            },
-                        }
-                    },
-                    ExtendedRequest::OpensshPosixRename { oldpath, newpath } => {
-                        io_result_resp(id, fs::rename(oldpath, newpath).await)
-                    },
-                    ExtendedRequest::OpensshHardlink { oldpath, newpath } => {
-                        io_result_resp(id, fs::hard_link(oldpath, newpath).await)
-                    },
-                    ExtendedRequest::OpensshFsync { handle } => {
-                        let file = self.file_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
-                        io_result_resp(id, file.sync_all().await)
-                    },
-                }
-            },
-        };
-        Ok(resp)
-    }
-}
-
-fn status_resp(id: u32, status_code: StatusCode) -> SftpServerPacket {
-    SftpServerPacket::Status {
-        id, status_code,
-        error_message: format!("{:?}", status_code),
-        language_tag: "en".to_string(),
-    }
-}
-
-fn io_error_resp(id: u32, e: std::io::Error) -> SftpServerPacket {
-    let status_code = match e.kind() {
-        std::io::ErrorKind::NotFound => StatusCode::NoSuchFile,
-        std::io::ErrorKind::PermissionDenied => StatusCode::PermissionDenied,
-        std::io::ErrorKind::InvalidInput => StatusCode::BadMessage,
-        std::io::ErrorKind::InvalidData => StatusCode::BadMessage,
-        _ => StatusCode::Failure,
-    };
-    SftpServerPacket::Status {
-        id, status_code,
-        error_message: e.to_string(),
-        language_tag: "en".to_string(),
-    }
-}
-
-fn io_result_resp<T>(id: u32, r: std::io::Result<T>) -> SftpServerPacket {
-    match r {
-        Err(e) => io_error_resp(id, e),
-        Ok(_) => status_resp(id, StatusCode::r#Ok),
     }
 }
