@@ -174,15 +174,19 @@ impl Fs for LocalFs {
     async fn symlink(&self, linkpath: String, targetpath: String) -> Result<()> {
         Ok(fs::symlink(targetpath, linkpath).await?)
     }
+    async fn posix_rename_supported(&self) -> bool { true }
     async fn posix_rename(&self, oldpath: String, newpath: String) -> Result<()> {
         Ok(fs::rename(oldpath, newpath).await?)
     }
+    async fn fsync_supported(&self) -> bool { true }
     async fn fsync(&self, handle: &mut Self::FileHandle) -> Result<()> {
         Ok(handle.sync_all().await?)
     }
+    async fn statvfs_supported(&self) -> bool { true }
     async fn statvfs(&self, path: String) -> Result<FsStats> {
         Ok(fs_async::statvfs(path).await?.into())
     }
+    async fn hardlink_supported(&self) -> bool { true }
     async fn hardlink(&self, oldpath: String, newpath: String) -> Result<()> {
         Ok(fs::hard_link(oldpath, newpath).await?)
     }

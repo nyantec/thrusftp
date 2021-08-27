@@ -12,19 +12,19 @@ pub enum FsHandle<F, D> {
     Dir(D),
 }
 
-struct SftpClient<T: Fs> {
+struct SftpClient<T: Fs + Send + Sync> {
     handles: HashMap<String, FsHandle<T::FileHandle, T::DirHandle>>,
 }
 
-pub struct SftpServer<T: Fs> {
+pub struct SftpServer<T: Fs + Send + Sync> {
     clients: RwLock<HashMap<String, Arc<RwLock<SftpClient<T>>>>>,
     fs: T,
 }
 
 #[async_trait]
 pub trait Fs {
-    type FileHandle;
-    type DirHandle;
+    type FileHandle: Send + Sync;
+    type DirHandle: Send + Sync;
 
     async fn open(&self, filename: String, pflags: Pflags, attrs: Attrs) -> Result<Self::FileHandle>;
     async fn close(&self, handle: FsHandle<Self::FileHandle, Self::DirHandle>) -> Result<()>;
@@ -45,13 +45,25 @@ pub trait Fs {
     async fn readlink(&self, path: String) -> Result<String>;
     async fn symlink(&self, linkpath: String, targetpath: String) -> Result<()>;
 
-    async fn posix_rename(&self, oldpath: String, newpath: String) -> Result<()>;
-    async fn fsync(&self, handle: &mut Self::FileHandle) -> Result<()>;
-    async fn statvfs(&self, path: String) -> Result<FsStats>;
-    async fn hardlink(&self, oldpath: String, newpath: String) -> Result<()>;
+    async fn posix_rename_supported(&self) -> bool { false }
+    async fn posix_rename(&self, _oldpath: String, _newpath: String) -> Result<()> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported).into())
+    }
+    async fn fsync_supported(&self) -> bool { false }
+    async fn fsync(&self, _handle: &mut Self::FileHandle) -> Result<()> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported).into())
+    }
+    async fn statvfs_supported(&self) -> bool { false }
+    async fn statvfs(&self, _path: String) -> Result<FsStats> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported).into())
+    }
+    async fn hardlink_supported(&self) -> bool { false }
+    async fn hardlink(&self, _oldpath: String, _newpath: String) -> Result<()> {
+        Err(std::io::Error::from(std::io::ErrorKind::Unsupported).into())
+    }
 }
 
-impl<T: Fs> SftpServer<T> {
+impl<T: Fs + Send + Sync> SftpServer<T> {
     pub fn new(fs: T) -> Arc<Self> {
         Arc::new(Self { fs, clients: RwLock::new(HashMap::new()) })
     }
@@ -81,26 +93,34 @@ impl<T: Fs> SftpServer<T> {
         let mut client = client.write().await;
         match packet {
             SftpClientPacket::Init { .. } => {
+                let mut extensions = vec![];
+                if self.fs.statvfs_supported().await {
+                    extensions.push(Extension {
+                        name: "statvfs@openssh.com".to_string(),
+                        data: "2".to_string(),
+                    });
+                }
+                if self.fs.posix_rename_supported().await {
+                    extensions.push(Extension {
+                        name: "posix-rename@openssh.com".to_string(),
+                        data: "1".to_string(),
+                    });
+                }
+                if self.fs.fsync_supported().await {
+                    extensions.push(Extension {
+                        name: "fsync@openssh.com".to_string(),
+                        data: "1".to_string(),
+                    });
+                }
+                if self.fs.hardlink_supported().await {
+                    extensions.push(Extension {
+                        name: "hardlink@openssh.com".to_string(),
+                        data: "1".to_string(),
+                    });
+                }
                 SftpServerPacket::Version {
                     version: 3,
-                    extensions: vec![
-                        Extension {
-                            name: "statvfs@openssh.com".to_string(),
-                            data: "2".to_string(),
-                        },
-                        Extension {
-                            name: "posix-rename@openssh.com".to_string(),
-                            data: "1".to_string(),
-                        },
-                        Extension {
-                            name: "fsync@openssh.com".to_string(),
-                            data: "1".to_string(),
-                        },
-                        Extension {
-                            name: "hardlink@openssh.com".to_string(),
-                            data: "1".to_string(),
-                        },
-                    ].into(),
+                    extensions: extensions.into(),
                 }
             },
             SftpClientPacket::Realpath { id, path } => {
@@ -294,6 +314,7 @@ fn error_resp(id: u32, err: anyhow::Error) -> SftpServerPacket{
             std::io::ErrorKind::NotFound => StatusCode::NoSuchFile,
             std::io::ErrorKind::UnexpectedEof => StatusCode::Eof,
             std::io::ErrorKind::PermissionDenied => StatusCode::PermissionDenied,
+            std::io::ErrorKind::Unsupported => StatusCode::OpUnsupported,
             std::io::ErrorKind::InvalidInput => StatusCode::BadMessage,
             std::io::ErrorKind::InvalidData => StatusCode::BadMessage,
             _ => StatusCode::Failure,
