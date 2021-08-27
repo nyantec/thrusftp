@@ -71,6 +71,37 @@ pub struct Name {
     pub attrs: Attrs,
 }
 
+#[derive(Clone, Debug)]
+pub enum ExtendedRequestType {
+    OpensshStatvfs,
+    OpensshPosixRename,
+    OpensshHardlink,
+    OpensshFsync,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[bin_ser(repr = ExtendedRequestType)]
+pub enum ExtendedRequest {
+    #[bin_ser(val = ExtendedRequestType::OpensshStatvfs)]
+    OpensshStatvfs {
+        path: String,
+    },
+    #[bin_ser(val = ExtendedRequestType::OpensshPosixRename)]
+    OpensshPosixRename {
+        oldpath: String,
+        newpath: String,
+    },
+    #[bin_ser(val = ExtendedRequestType::OpensshHardlink)]
+    OpensshHardlink {
+        oldpath: String,
+        newpath: String,
+    },
+    #[bin_ser(val = ExtendedRequestType::OpensshFsync)]
+    OpensshFsync {
+        handle: String,
+    },
+}
+
 pub type Handle = String;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -79,7 +110,7 @@ pub enum SftpClientPacket {
     #[bin_ser(val = 1)]
     Init {
         version: u32,
-        //extensions: Vec<Extension>,
+        extensions: VecEos<Extension>,
     },
     #[bin_ser(val = 3)]
     Open {
@@ -186,8 +217,7 @@ pub enum SftpClientPacket {
     #[bin_ser(val = 200)]
     Extended {
         id: u32,
-        extended_request: String,
-        data: VecU8,
+        extended_request: ExtendedRequest,
     },
 }
 
@@ -197,7 +227,7 @@ pub enum SftpServerPacket {
     #[bin_ser(val = 2)]
     Version {
         version: u32,
-        //extensions: Vec<Extension>,
+        extensions: VecEos<Extension>,
     },
     #[bin_ser(val = 101)]
     Status {
@@ -264,6 +294,16 @@ impl From<libc::statvfs> for FsStats {
             f_flag: f.f_flag,
             f_namemax: f.f_namemax,
         }
+    }
+}
+
+/// Vec that has no length on-wire. It ends when the stream ends.
+#[derive(Clone, Debug)]
+pub struct VecEos<T>(pub Vec<T>);
+
+impl<T> From<Vec<T>> for VecEos<T> {
+    fn from(vec: Vec<T>) -> Self {
+        Self(vec)
     }
 }
 

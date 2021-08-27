@@ -144,7 +144,7 @@ impl Client {
             SftpClientPacket::Init { .. } => {
                 SftpServerPacket::Version {
                     version: 3,
-                    /*extensions: vec![
+                    extensions: vec![
                         Extension {
                             name: "statvfs@openssh.com".to_string(),
                             data: "2".to_string(),
@@ -161,7 +161,7 @@ impl Client {
                             name: "hardlink@openssh.com".to_string(),
                             data: "1".to_string(),
                         },
-                    ],*/
+                    ].into(),
                 }
             },
             SftpClientPacket::Realpath { id, path } => {
@@ -352,42 +352,27 @@ impl Client {
                     },
                 }
             },
-            SftpClientPacket::Extended { id, extended_request, data } => {
-                match extended_request.as_str() {
-                    /*"statvfs@openssh.com" => {
-                        let mut data = data.as_slice();
-                        let path = read_string!(data);
-                        if data.len() != 0 { Err(ProtocolError::InvalidLength)? }
+            SftpClientPacket::Extended { id, extended_request } => {
+                match extended_request {
+                    ExtendedRequest::OpensshStatvfs { path } => {
                         match fs_async::statvfs(path).await {
                             Err(e) => io_error_resp(id, e),
                             Ok(stat) => {
-                                let data = statvfs_to_bytes(stat);
+                                let data = FsStats::from(stat).serialize()?.into();
                                 SftpServerPacket::ExtendedReply { id, data }
                             },
                         }
                     },
-                    "posix-rename@openssh.com" => {
-                        let mut data = data.as_slice();
-                        let oldpath = read_string!(data);
-                        let newpath = read_string!(data);
-                        if data.len() != 0 { Err(ProtocolError::InvalidLength)? }
+                    ExtendedRequest::OpensshPosixRename { oldpath, newpath } => {
                         io_result_resp(id, fs::rename(oldpath, newpath).await)
                     },
-                    "hardlink@openssh.com" => {
-                        let mut data = data.as_slice();
-                        let oldpath = read_string!(data);
-                        let newpath = read_string!(data);
-                        if data.len() != 0 { Err(ProtocolError::InvalidLength)? }
+                    ExtendedRequest::OpensshHardlink { oldpath, newpath } => {
                         io_result_resp(id, fs::hard_link(oldpath, newpath).await)
                     },
-                    "fsync@openssh.com" => {
-                        let mut data = data.as_slice();
-                        let handle = read_string!(data);
-                        if data.len() != 0 { Err(ProtocolError::InvalidLength)? }
+                    ExtendedRequest::OpensshFsync { handle } => {
                         let file = self.file_handles.get_mut(&handle).ok_or(ProtocolError::NoSuchHandle)?;
                         io_result_resp(id, file.sync_all().await)
-                    },*/
-                    _ => status_resp(id, StatusCode::OpUnsupported),
+                    },
                 }
             },
         };

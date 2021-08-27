@@ -219,3 +219,45 @@ impl Deserialize for Pflags {
     }
 }
 
+impl Serialize for ExtendedRequestType {
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let s = match self {
+            ExtendedRequestType::OpensshStatvfs => "statvfs@openssh.com",
+            ExtendedRequestType::OpensshPosixRename => "posix-rename@openssh.com",
+            ExtendedRequestType::OpensshHardlink => "hardlink@openssh.com",
+            ExtendedRequestType::OpensshFsync => "fsync@openssh.com",
+        };
+        s.to_string().serialize()
+    }
+}
+
+impl Deserialize for ExtendedRequestType {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
+        String::deserialize(input).map(|s| match s.as_str() {
+            "statvfs@openssh.com" => ExtendedRequestType::OpensshStatvfs,
+            "posix-rename@openssh.com" => ExtendedRequestType::OpensshPosixRename,
+            "hardlink@openssh.com" => ExtendedRequestType::OpensshHardlink,
+            "fsync@openssh.com" => ExtendedRequestType::OpensshFsync,
+            _ => panic!("unexpected extended request"),
+        })
+    }
+}
+
+impl<T> Serialize for VecEos<T> where T: Serialize {
+    fn serialize(&self) -> Result<Vec<u8>> {
+        let mut res = Vec::new();
+        for ext in &self.0 {
+            res.append(&mut ext.serialize()?);
+        }
+        Ok(res)
+    }
+}
+impl<T> Deserialize for VecEos<T> where T: Deserialize {
+    fn deserialize(input: &mut &[u8]) -> Result<Self> {
+        let mut res = Vec::new();
+        while input.len() > 0 {
+            res.push(T::deserialize(input)?);
+        }
+        Ok(res.into())
+    }
+}
