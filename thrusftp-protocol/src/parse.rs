@@ -1,17 +1,19 @@
+use std::io::Write;
 use crate::types::*;
 use anyhow::Result;
 use std::convert::TryInto;
 
 pub trait Serialize {
-    fn serialize(&self) -> Result<Vec<u8>>;
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()>;
 }
 pub trait Deserialize: Sized {
     fn deserialize(input: &mut &[u8]) -> Result<Self>;
 }
 
 impl Serialize for u8 {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        Ok(vec![*self; 1])
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
+        writer.write_all(&[*self; 1])?;
+        Ok(())
     }
 }
 impl Deserialize for u8 {
@@ -23,8 +25,9 @@ impl Deserialize for u8 {
 }
 
 impl Serialize for u32 {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        Ok(self.to_be_bytes().to_vec())
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
+        writer.write_all(&self.to_be_bytes())?;
+        Ok(())
     }
 }
 impl Deserialize for u32 {
@@ -36,8 +39,9 @@ impl Deserialize for u32 {
 }
 
 impl Serialize for u64 {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        Ok(self.to_be_bytes().to_vec())
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
+        writer.write_all(&self.to_be_bytes())?;
+        Ok(())
     }
 }
 impl Deserialize for u64 {
@@ -49,12 +53,11 @@ impl Deserialize for u64 {
 }
 
 impl Serialize for String {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        let mut res = Vec::new();
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         let len = self.len() as u32;
-        res.append(&mut len.serialize()?);
-        res.append(&mut self.as_bytes().to_vec());
-        Ok(res)
+        len.serialize(writer)?;
+        writer.write_all(self.as_bytes())?;
+        Ok(())
     }
 }
 impl Deserialize for String {
@@ -67,12 +70,11 @@ impl Deserialize for String {
 }
 
 impl Serialize for VecU8 {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        let mut res = Vec::new();
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         let len = self.0.len() as u32;
-        res.append(&mut len.serialize()?);
-        res.append(&mut self.0.clone());
-        Ok(res)
+        len.serialize(writer)?;
+        writer.write_all(&self.0)?;
+        Ok(())
     }
 }
 impl Deserialize for VecU8 {
@@ -83,14 +85,13 @@ impl Deserialize for VecU8 {
 }
 
 impl<T> Serialize for Vec<T> where T: Serialize {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        let mut res = Vec::new();
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         let len = self.len() as u32;
-        res.append(&mut len.serialize()?);
+        len.serialize(writer)?;
         for el in self {
-            res.append(&mut el.serialize()?);
+            el.serialize(writer)?;
         }
-        Ok(res)
+        Ok(())
     }
 }
 impl<T> Deserialize for Vec<T> where T: Deserialize {
@@ -105,8 +106,7 @@ impl<T> Deserialize for Vec<T> where T: Deserialize {
 }
 
 impl Serialize for Attrs {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        let mut res = Vec::new();
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         let flags = Attrsflags {
             size: self.size.is_some(),
             uidgid: self.uid_gid.is_some(),
@@ -114,25 +114,25 @@ impl Serialize for Attrs {
             acmodtime: self.atime_mtime.is_some(),
             extended: self.extended_attrs.len() > 0,
         };
-        res.append(&mut flags.serialize()?);
+        flags.serialize(writer)?;
         if let Some(size) = self.size {
-            res.append(&mut size.serialize()?);
+            size.serialize(writer)?;
         }
         if let Some((uid, gid)) = self.uid_gid {
-            res.append(&mut uid.serialize()?);
-            res.append(&mut gid.serialize()?);
+            uid.serialize(writer)?;
+            gid.serialize(writer)?;
         }
         if let Some(permissions) = self.permissions {
-            res.append(&mut permissions.serialize()?);
+            permissions.serialize(writer)?;
         }
         if let Some((atime, mtime)) = self.atime_mtime {
-            res.append(&mut atime.serialize()?);
-            res.append(&mut mtime.serialize()?);
+            atime.serialize(writer)?;
+            mtime.serialize(writer)?;
         }
         if self.extended_attrs.len() > 0 {
-            res.append(&mut self.extended_attrs.serialize()?);
+            self.extended_attrs.serialize(writer)?;
         }
-        Ok(res)
+        Ok(())
     }
 }
 
@@ -166,14 +166,14 @@ impl Deserialize for Attrs {
 }
 
 impl Serialize for Attrsflags {
-    fn serialize(&self) -> Result<Vec<u8>> {
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         let mut num = 0u32;
         if self.size        { num +=                                0b1; }
         if self.uidgid      { num +=                               0b10; }
         if self.permissions { num +=                              0b100; }
         if self.acmodtime   { num +=                             0b1000; }
         if self.extended    { num += 0b10000000000000000000000000000000; }
-        num.serialize()
+        num.serialize(writer)
     }
 }
 
@@ -192,7 +192,7 @@ impl Deserialize for Attrsflags {
 }
 
 impl Serialize for Pflags {
-    fn serialize(&self) -> Result<Vec<u8>> {
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         let mut num = 0u32;
         if self.read   { num +=      0b1; }
         if self.write  { num +=     0b10; }
@@ -200,7 +200,7 @@ impl Serialize for Pflags {
         if self.creat  { num +=   0b1000; }
         if self.trunc  { num +=  0b10000; }
         if self.excl   { num += 0b100000; }
-        num.serialize()
+        num.serialize(writer)
     }
 }
 
@@ -220,14 +220,14 @@ impl Deserialize for Pflags {
 }
 
 impl Serialize for ExtendedRequestType {
-    fn serialize(&self) -> Result<Vec<u8>> {
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         let s = match self {
             ExtendedRequestType::OpensshStatvfs => "statvfs@openssh.com",
             ExtendedRequestType::OpensshPosixRename => "posix-rename@openssh.com",
             ExtendedRequestType::OpensshHardlink => "hardlink@openssh.com",
             ExtendedRequestType::OpensshFsync => "fsync@openssh.com",
         };
-        s.to_string().serialize()
+        s.to_string().serialize(writer)
     }
 }
 
@@ -244,12 +244,11 @@ impl Deserialize for ExtendedRequestType {
 }
 
 impl<T> Serialize for VecEos<T> where T: Serialize {
-    fn serialize(&self) -> Result<Vec<u8>> {
-        let mut res = Vec::new();
+    fn serialize(&self, writer: &mut dyn Write) -> Result<()> {
         for ext in &self.0 {
-            res.append(&mut ext.serialize()?);
+            ext.serialize(writer)?;
         }
-        Ok(res)
+        Ok(())
     }
 }
 impl<T> Deserialize for VecEos<T> where T: Deserialize {

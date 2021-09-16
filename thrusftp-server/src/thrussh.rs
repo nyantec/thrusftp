@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use std::convert::TryInto;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
+use std::io::Write;
 
 use crate::SftpServer;
 use thrusftp_protocol::types::*;
@@ -89,10 +90,13 @@ impl<T: Fs + Send + Sync> thrussh::server::Handler for Client<T> {
 
                     let resp = self.server.clone().process(&self.handle, packet).await;
 
+                    let mut tmp_buf = Vec::new();
+                    resp.serialize(&mut tmp_buf).unwrap();
+
                     let mut resp_buf = Vec::new();
-                    let mut resp_bytes = resp.serialize().unwrap();
-                    resp_buf.append(&mut u32::serialize(&(resp_bytes.len() as u32))?);
-                    resp_buf.append(&mut resp_bytes);
+                    let resp_len = tmp_buf.len() as u32;
+                    resp_len.serialize(&mut resp_buf).unwrap();
+                    resp_buf.write_all(&tmp_buf).unwrap();
                     session.data(channel, CryptoVec::from_slice(&resp_buf));
                 }
             }

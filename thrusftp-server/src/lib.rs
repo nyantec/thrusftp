@@ -227,9 +227,11 @@ impl<T: Fs + Send + Sync> SftpServer<T> {
                     ExtendedRequest::OpensshStatvfs { path } => {
                         self.fs.statvfs(path).await
                             .map(|stats| {
+                                let mut data = vec![];
+                                stats.serialize(&mut data).unwrap();
                                 SftpServerPacket::ExtendedReply {
                                     id,
-                                    data: stats.serialize().unwrap().into()
+                                    data: data.into(),
                                 }
                             })
                             .unwrap_or_else(|err| error_resp(id, err))

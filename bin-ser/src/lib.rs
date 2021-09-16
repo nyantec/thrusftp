@@ -26,13 +26,13 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
             Fields::Named(ref named_fields) => {
                 let name = named_fields.named.iter().map(|f| &f.ident);
                 quote! {
-                    #( res.append(&mut Serialize::serialize(&self.#name)?); )*
+                    #( Serialize::serialize(&self.#name, writer)?; )*
                 }
             },
             Fields::Unnamed(ref unnamed_fields) => {
                 let num = (0..unnamed_fields.unnamed.len()).map(syn::Index::from);
                 quote! {
-                    #( res.append(&mut Serialize::serialize(&self.#num)?); )*
+                    #( Serialize::serialize(&self.#num, writer)?; )*
                 }
             },
             _ => unimplemented!(),
@@ -46,12 +46,12 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
                     Fields::Named(ref named_fields) => {
                         let field = named_fields.named.iter().map(|f| &f.ident);
                         let serialize_fields = quote! {
-                            #( res.append(&mut Serialize::serialize(#field)?); )*
+                            #( Serialize::serialize(#field, writer)?; )*
                         };
                         let field = named_fields.named.iter().map(|f| &f.ident);
                         quote! {
                             #ident::#variantname { #( #field ),* } => {
-                                res.append(&mut <#repr>::serialize(&#variantval)?);
+                                <#repr>::serialize(&#variantval, writer)?;
                                 #serialize_fields
                             }
                         }
@@ -59,7 +59,7 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
                     Fields::Unit => {
                         quote! {
                             #ident::#variantname => {
-                                res.append(&mut <#repr>::serialize(&#variantval)?);
+                                <#repr>::serialize(&#variantval, writer)?;
                             }
                         }
                     }
@@ -77,12 +77,9 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         impl Serialize for #ident {
-            fn serialize(&self) -> anyhow::Result<Vec<u8>> {
-                let mut res = Vec::new();
-
+            fn serialize(&self, writer: &mut Write) -> anyhow::Result<()> {
                 #content
-
-                Ok(res)
+                Ok(())
             }
         }
     };

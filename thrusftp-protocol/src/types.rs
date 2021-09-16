@@ -1,3 +1,4 @@
+use std::io::Write;
 use crate::parse::{Serialize, Deserialize};
 use bin_ser::{Serialize, Deserialize};
 
